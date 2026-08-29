@@ -3,8 +3,8 @@
 API responsável por intermediar a comunicação entre o frontend (Angular) e o drone DJI Tello, expondo endpoints REST para controle e testes.
 
 Este repositório faz parte do TCC "Drone Waste Monitoring", junto com:
-- [detector_de_lixo](https://github.com/Jhonydev72/detector_de_lixo) — scripts de controle de voo, visão computacional e YOLOv8
-- [detector-mfe](https://github.com/helen-silv4/detector-mfe) — frontend em Angular
+- [detector_de_lixo](https://github.com/Jhonydev72/detector_de_lixo):  scripts de controle de voo, visão computacional e YOLOv8
+- [detector-mfe](https://github.com/helen-silv4/detector-mfe):  frontend em Angular
 
 ### **Status atual**
 
@@ -18,34 +18,34 @@ Este repositório faz parte do TCC "Drone Waste Monitoring", junto com:
 
 Clone o repositório e entre na pasta:
 
-\```bash
+```bash
 git clone https://github.com/helen-silv4/detector-api.git
 cd detector-api
-\```
+```
 
 Crie o ambiente virtual:
 
-\```bash
+```bash
 python -m venv .venv
-\```
+```
 
 Ative o ambiente virtual (Git Bash):
 
-\```bash
+```bash
 source .venv/Scripts/activate
-\```
+```
 
 Instale as dependências:
 
-\```bash
+```bash
 python -m pip install -r requirements.txt
-\```
+```
 
 ### **Execução**
 
-\```bash
+```bash
 uvicorn main:app --reload --port 8000
-\```
+```
 
 A API estará disponível em `http://localhost:8000`.
 
