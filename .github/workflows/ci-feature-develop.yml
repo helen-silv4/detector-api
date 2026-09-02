@@ -1,0 +1,38 @@
+name: CI Feature -> Develop
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix/**'
+      - 'hotfix/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  abrir-pr-develop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Criar pull request para develop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+
+          JA_EXISTE=$(gh pr list --base develop --head "$BRANCH_NAME" --state open --json number --jq '.[0].number')
+
+          if [ -n "$JA_EXISTE" ]; then
+            echo "Já existe um PR aberto (#$JA_EXISTE) dessa branch para develop. Nada a fazer."
+            exit 0
+          fi
+
+          gh pr create \
+            --base develop \
+            --head "$BRANCH_NAME" \
+            --title "$BRANCH_NAME -> develop" \
+            --body "PR aberto automaticamente ao dar push em \`$BRANCH_NAME\`."

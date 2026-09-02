@@ -1,0 +1,19 @@
+name: CI Main Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  registrar-atualizacao:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar resumo da atualização
+        run: |
+          echo "## 🚀 A branch \`main\` foi atualizada" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **PR:** #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Mesclado por:** ${{ github.event.pull_request.merged_by.login }}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,36 @@
+name: CI Develop -> Main
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - develop
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  abrir-pr-main:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Criar pull request para main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          JA_EXISTE=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
+
+          if [ -n "$JA_EXISTE" ]; then
+            echo "Já existe um PR aberto (#$JA_EXISTE) de develop para main. Nada a fazer."
+            exit 0
+          fi
+
+          gh pr create \
+            --base main \
+            --head develop \
+            --title "Release: develop -> main" \
+            --body "PR aberto automaticamente após o merge do PR #${{ github.event.pull_request.number }} em develop."
