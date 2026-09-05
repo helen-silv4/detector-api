@@ -3,6 +3,7 @@
 API assíncrona responsável por intermediar a comunicação entre o frontend (Angular) e o drone DJI Tello, executando inferência de Visão Computacional (YOLOv8) na Edge e transmitindo vídeo via streaming MJPEG.
 
 Este repositório faz parte do TCC Drone Waste Monitoring, junto com:
+
 - [detector_de_lixo](https://github.com/Jhonydev72/detector_de_lixo): scripts de treinamento do YOLO e datasets.
 - [detector-mfe](https://github.com/helen-silv4/detector-mfe): interface de operação e telemetria em Angular.
 
@@ -51,7 +52,6 @@ pip install torch torchvision torchaudio --index-url [https://download.pytorch.o
 pip install -r requirements.txt
 
 ```
-
 
 
 ---
