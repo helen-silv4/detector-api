@@ -1,4 +1,3 @@
-```markdown
 ## 🛩️ **Drone Waste Monitoring - API (Edge Computing & AI)**
 
 API assíncrona responsável por intermediar a comunicação entre o frontend (Angular) e o drone DJI Tello, executando inferência de Visão Computacional (YOLOv8) na Edge e transmitindo vídeo via streaming MJPEG.
@@ -95,7 +94,3 @@ Variável de ambiente `DRONE_MODE` para testes locais de interface sem o equipam
 ### **Próximos passos**
 
 * Integração com banco de dados PostgreSQL/PostGIS para salvamento persistente das coordenadas de infrações detectadas pela IA.
-
-```
-
-```
