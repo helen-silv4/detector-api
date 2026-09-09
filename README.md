@@ -18,8 +18,6 @@ Este repositório faz parte do TCC Drone Waste Monitoring, junto com:
 *   **Odometria Inercial (Dead Reckoning):** Cálculo de coordenadas geográficas (Mock GPS) em tempo real integrando a velocidade inercial (`get_speed_x/y`) e tempo (`delta_t`).
 *   **Aceleração de Hardware:** Suporte a NVIDIA CUDA / Tensor Cores via PyTorch (`device=0`).
 
----
-
 ### **Requisitos**
 
 - Python 3.10+
@@ -33,7 +31,6 @@ Clone o repositório e entre na pasta:
 ```bash
 git clone https://github.com/helen-silv4/detector-api.git
 cd detector-api
-
 ```
 
 Crie e ative o ambiente virtual:
@@ -42,31 +39,23 @@ Crie e ative o ambiente virtual:
 python -m venv .venv
 source .venv/Scripts/activate  # Git Bash / Linux
 # ou .\venv\Scripts\activate   # Windows PowerShell
-
 ```
 
 Instale as dependências. Para habilitar a GPU, instale a versão do PyTorch com suporte ao CUDA **antes** do `requirements.txt`:
 
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121s
 pip install -r requirements.txt
-
 ```
-
-
----
 
 ### **Execução**
 
 ```bash
 python -m uvicorn main:app --reload --port 8000
-
 ```
 
 * A API estará disponível em `http://localhost:8000`.
 * Documentação automática (Swagger) em `http://localhost:8000/docs`.
-
----
 
 ### **Endpoints de Operação**
 
