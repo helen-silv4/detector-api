@@ -2,7 +2,7 @@
 
 API assíncrona responsável por intermediar a comunicação entre o frontend (Angular) e o drone DJI Tello, executando inferência de Visão Computacional (YOLOv8) na Edge e transmitindo vídeo via streaming MJPEG.
 
-Este repositório faz parte do TCC Drone Waste Monitoring, junto com:
+Este repositório faz parte do TCC **Drone Waste Monitoring**, junto com:
 
 - [detector_de_lixo](https://github.com/Jhonydev72/detector_de_lixo): scripts de treinamento do YOLO e datasets.
 - [detector-mfe](https://github.com/helen-silv4/detector-mfe): interface de operação e telemetria em Angular.
@@ -13,17 +13,20 @@ Este repositório faz parte do TCC Drone Waste Monitoring, junto com:
 
 ### **Arquitetura e Features**
 
-*   **Streaming MJPEG:** Conversão de frames OpenCV para um fluxo contínuo compatível nativamente com tags `<img>` no HTML, sem necessidade de plugins extras no frontend.
-*   **Frame Skipping Dinâmico:** Para garantir fluidez de vídeo (30 FPS), a IA processa quadros em intervalos (ex: a cada 3 frames), mantendo a bounding box na tela e eliminando o "Video Delay".
-*   **Odometria Inercial (Dead Reckoning):** Cálculo de coordenadas geográficas (Mock GPS) em tempo real integrando a velocidade inercial (`get_speed_x/y`) e tempo (`delta_t`).
-*   **Aceleração de Hardware:** Suporte a NVIDIA CUDA / Tensor Cores via PyTorch (`device=0`).
+- **Streaming MJPEG:** Conversão de frames OpenCV para um fluxo contínuo compatível nativamente com tags `<img>` no HTML, sem necessidade de plugins extras no frontend.
 
----
+- **Frame Skipping Dinâmico:** Para garantir fluidez de vídeo (30 FPS), a IA processa quadros em intervalos (ex: a cada 3 frames), mantendo a bounding box na tela e eliminando o "Video Delay".
+
+- **Odometria Inercial (Dead Reckoning):** Cálculo de coordenadas geográficas (Mock GPS) em tempo real integrando a velocidade inercial (`get_speed_x/y`) e tempo (`delta_t`).
+
+- **Aceleração de Hardware:** Suporte a NVIDIA CUDA / Tensor Cores via PyTorch (`device=0`).
 
 ### **Requisitos**
 
-- Python 3.10+
+- Python 3.12 (necessário para compatibilidade com a versão do PyTorch utilizada no projeto)
+
 - DJI Tello
+
 - **Opcional (Recomendado):** Placa de vídeo NVIDIA (RTX 2050+) com Drivers CUDA 12.1+ para fluidez de inferência.
 
 ### **Configuração e Instalação**
@@ -33,40 +36,71 @@ Clone o repositório e entre na pasta:
 ```bash
 git clone https://github.com/helen-silv4/detector-api.git
 cd detector-api
-
 ```
 
-Crie e ative o ambiente virtual:
+Crie e ative o ambiente virtual utilizando o Python 3.12.
+
+**Git Bash / Linux:**
 
 ```bash
-python -m venv .venv
-source .venv/Scripts/activate  # Git Bash / Linux
-# ou .\venv\Scripts\activate   # Windows PowerShell
+python3.12 -m venv .venv
+source .venv/Scripts/activate
+```
 
+**Windows PowerShell:**
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+> ⚠️ **Importante:** Utilize o Python 3.12 para garantir a compatibilidade com a versão do PyTorch utilizada pelo projeto.
+
+Confirme a versão do Python:
+
+```bash
+python --version
+```
+O resultado deve ser semelhante a:
+
+```text
+Python 3.12.x
 ```
 
 Instale as dependências. Para habilitar a GPU, instale a versão do PyTorch com suporte ao CUDA **antes** do `requirements.txt`:
 
+**Git Bash / Linux / Windows:**
+
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
 pip install -r requirements.txt
-
 ```
-
-
----
 
 ### **Execução**
 
-```bash
-python -m uvicorn main:app --reload --port 8000
+Com o ambiente virtual ativado, o modo `mock` pode ser iniciado no Git Bash com:
 
+```bash
+DRONE_MODE=mock python -m uvicorn main:app --reload --port 8000
 ```
 
-* A API estará disponível em `http://localhost:8000`.
-* Documentação automática (Swagger) em `http://localhost:8000/docs`.
+No Windows PowerShell:
 
----
+```powershell
+$env:DRONE_MODE = "mock"
+python -m uvicorn main:app --reload --port 8000
+```
+
+O `mock` também é o modo padrão. Portanto, sem definir a variável, este comando produz o mesmo resultado:
+
+```bash
+python -m uvicorn main:app --reload --port 8000
+```
+
+- A API estará disponível em `http://localhost:8000`.
+
+- Documentação automática (Swagger) em `http://localhost:8000/docs`.
 
 ### **Endpoints de Operação**
 
@@ -82,15 +116,33 @@ python -m uvicorn main:app --reload --port 8000
 
 Variável de ambiente `DRONE_MODE` para testes locais de interface sem o equipamento:
 
-* **`mock`** (padrão): devolve logs simulados, sem tocar em nenhum drone. Útil para testar os botões do frontend.
-* **`real`**: conecta de fato ao Tello físico.
+- **`mock`** (padrão): devolve logs simulados, sem tocar em nenhum drone. Útil para testar os botões do frontend.
+
+- **`real`**: conecta de fato ao Tello físico.
+
+No Git Bash:
+
+```bash
+DRONE_MODE=real python -m uvicorn main:app --reload --port 8000
+```
+
+No Windows PowerShell:
+
+```powershell
+$env:DRONE_MODE = "real"
+python -m uvicorn main:app --reload --port 8000
+```
+
+Confirme o modo ativo em `http://localhost:8000/health`. A resposta deve conter `"drone_mode": "mock"` ou `"drone_mode": "real"`.
 
 ⚠️ **Checklist de Voo (Modo Real):**
 
 1. Conecte o PC ao Wi-Fi nativo do DJI Tello.
+
 2. Certifique-se de que a bateria está acima de 20%.
+
 3. O servidor Uvicorn deve ter acesso exclusivo ao drone (não abra scripts paralelos usando a biblioteca DJITelloPy simultaneamente).
 
 ### **Próximos passos**
 
-* Integração com banco de dados PostgreSQL/PostGIS para salvamento persistente das coordenadas de infrações detectadas pela IA.
+- Integração com banco de dados PostgreSQL/PostGIS para salvamento persistente das coordenadas de infrações detectadas pela IA.
