@@ -31,7 +31,7 @@ Este repositório faz parte do TCC Drone Waste Monitoring, junto com:
 Clone o repositório e entre na pasta:
 
 ```bash
-git clone [https://github.com/helen-silv4/detector-api.git](https://github.com/helen-silv4/detector-api.git)
+git clone https://github.com/helen-silv4/detector-api.git
 cd detector-api
 
 ```
@@ -48,7 +48,7 @@ source .venv/Scripts/activate  # Git Bash / Linux
 Instale as dependências. Para habilitar a GPU, instale a versão do PyTorch com suporte ao CUDA **antes** do `requirements.txt`:
 
 ```bash
-pip install torch torchvision torchaudio --index-url [https://download.pytorch.org/whl/cu121](https://download.pytorch.org/whl/cu121)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 
 ```
