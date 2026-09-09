@@ -27,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DRONE_MODE = "real"  # mock ou real
+DRONE_MODE = os.getenv("DRONE_MODE", "mock")  # "mock" ou "real"
 
 @app.get("/health")
 def health():
@@ -50,23 +50,6 @@ def teste_voo_video():
     if DRONE_MODE == "real":
         return teste_voo_video_real()
     return teste_voo_video_mock()
-
-
-# ---------------------------------------------------------------------------
-# Rota de detecção de resíduos com stream MJPEG em tempo real
-# ---------------------------------------------------------------------------
-
-@app.get("/deteccao/stream")
-def deteccao_stream():
-    """
-    Stream MJPEG com detecção de resíduos em tempo real via YOLOv8.
-    Usa a instância global do Tello para evitar conflitos de porta UDP.
-    """
-    logger.info("Iniciando stream de detecção de resíduos...")
-    return StreamingResponse(
-        gerar_stream_deteccao(drone_global),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-    )
 
 
 def teste_voo_mock():
@@ -192,6 +175,23 @@ def teste_voo_video_real():
     except Exception as e:
         logs.append(f"[ERRO] {e}")
         return {"status": "erro", "logs": logs}
+    
+# ---------------------------------------------------------------------------
+# Rota de detecção de resíduos com stream MJPEG em tempo real
+# ---------------------------------------------------------------------------
+
+@app.get("/deteccao/stream")
+def deteccao_stream():
+    """
+    Stream MJPEG com detecção de resíduos em tempo real via YOLOv8.
+    Usa a instância global do Tello para evitar conflitos de porta UDP.
+    """
+    logger.info("Iniciando stream de detecção de resíduos...")
+    return StreamingResponse(
+        gerar_stream_deteccao(drone_global),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
 
 
 # ---------------------------------------------------------------------------
