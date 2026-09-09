@@ -21,8 +21,6 @@ Este repositório faz parte do TCC **Drone Waste Monitoring**, junto com:
 
 - **Aceleração de Hardware:** Suporte a NVIDIA CUDA / Tensor Cores via PyTorch (`device=0`).
 
----
-
 ### **Requisitos**
 
 - Python 3.12 (necessário para compatibilidade com a versão do PyTorch utilizada no projeto)
@@ -38,7 +36,6 @@ Clone o repositório e entre na pasta:
 ```bash
 git clone https://github.com/helen-silv4/detector-api.git
 cd detector-api
-
 ```
 
 Crie e ative o ambiente virtual utilizando o Python 3.12.
@@ -46,12 +43,6 @@ Crie e ative o ambiente virtual utilizando o Python 3.12.
 **Git Bash / Linux:**
 
 ```bash
-<<<<<<< Updated upstream
-python -m venv .venv
-source .venv/Scripts/activate  # Git Bash / Linux
-# ou .\venv\Scripts\activate   # Windows PowerShell
-
-=======
 python3.12 -m venv .venv
 source .venv/Scripts/activate
 ```
@@ -74,7 +65,6 @@ O resultado deve ser semelhante a:
 
 ```text
 Python 3.12.x
->>>>>>> Stashed changes
 ```
 
 Instale as dependências. Para habilitar a GPU, instale a versão do PyTorch com suporte ao CUDA **antes** do `requirements.txt`:
@@ -83,16 +73,9 @@ Instale as dependências. Para habilitar a GPU, instale a versão do PyTorch com
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-<<<<<<< Updated upstream
-=======
 
->>>>>>> Stashed changes
 pip install -r requirements.txt
-
 ```
-
-
----
 
 ### **Execução**
 
@@ -113,14 +96,11 @@ O `mock` também é o modo padrão. Portanto, sem definir a variável, este coma
 
 ```bash
 python -m uvicorn main:app --reload --port 8000
-
 ```
 
 - A API estará disponível em `http://localhost:8000`.
 
 - Documentação automática (Swagger) em `http://localhost:8000/docs`.
-
----
 
 ### **Endpoints de Operação**
 
