@@ -10,14 +10,11 @@ from djitellopy import Tello
 
 from deteccao_stream import gerar_stream_deteccao
 
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
 # Instância global (Singleton) do drone — compartilhada entre todas as rotas
 # para evitar conflito de portas UDP ao criar múltiplos Tello().
-# ---------------------------------------------------------------------------
-drone_global = Tello()
 
+logger = logging.getLogger(__name__)
+drone_global = Tello()
 app = FastAPI(title="Drone Waste Monitoring - API")
 
 app.add_middleware(
@@ -27,32 +24,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DRONE_MODE = os.getenv("DRONE_MODE", "mock")  # "mock" ou "real"
+DRONE_MODE = os.getenv("DRONE_MODE", "mock")
+
+# ---------------------------------------------------------------------------
+# Rotas
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 def health():
     return {"status": "ok", "drone_mode": DRONE_MODE}
 
 @app.post("/testes/voo")
-def teste_voo():
+def teste_executar_voo():
     if DRONE_MODE == "real":
-        return teste_voo_real()
-    return teste_voo_mock()
+        return teste_realizar_voo()
+    return teste_simular_voo()
 
 @app.post("/testes/video")
-def teste_video():
+def teste_executar_video():
     if DRONE_MODE == "real":
-        return teste_video_real()
-    return teste_video_mock()
+        return teste_realizar_video()
+    return teste_simular_video()
 
 @app.post("/testes/voo-video")
-def teste_voo_video():
+def teste_executar_voo_video():
     if DRONE_MODE == "real":
-        return teste_voo_video_real()
-    return teste_voo_video_mock()
+        return decolar_com_video_sem_pouso_automatico()
+    return teste_simular_voo_video()
 
+@app.get("/deteccao/stream")
+def iniciar_stream_deteccao():
+    logger.info("Iniciando stream de detecção de resíduos...")
+    return StreamingResponse(
+        gerar_stream_deteccao(drone_global),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
 
-def teste_voo_mock():
+# ---------------------------------------------------------------------------
+# Testes
+# ---------------------------------------------------------------------------
+
+def teste_simular_voo():
     logs = []
     logs.append("[SYS] Conectando ao drone (simulado)...")
     logs.append("[SYS] Bateria: 85%")
@@ -63,7 +75,7 @@ def teste_voo_mock():
     logs.append("[SYS] Pouso concluído com sucesso.")
     return {"status": "sucesso", "logs": logs}
 
-def teste_video_mock():
+def teste_simular_video():
     logs = []
     logs.append("[SYS] Conectando ao drone (simulado)...")
     logs.append("[VID] Ativando stream de vídeo...")
@@ -72,7 +84,7 @@ def teste_video_mock():
     logs.append("[SYS] Encerrando stream.")
     return {"status": "sucesso", "logs": logs}
 
-def teste_voo_video_mock():
+def teste_simular_voo_video():
     logs = []
     logs.append("[SYS] Conectando ao drone (simulado)...")
     logs.append("[VID] Ativando stream de vídeo...")
@@ -83,15 +95,13 @@ def teste_voo_video_mock():
     logs.append("[SYS] Pouso concluído com sucesso.")
     return {"status": "sucesso", "logs": logs}
 
-
-def teste_voo_real():
+def teste_realizar_voo():
     logs = []
-    tello = Tello()
     try:
         logs.append("[SYS] Conectando ao drone...")
-        tello.connect()
+        drone_global.connect()
 
-        bateria = tello.get_battery()
+        bateria = drone_global.get_battery()
         logs.append(f"[SYS] Bateria: {bateria}%")
 
         if bateria < 20:
@@ -99,13 +109,13 @@ def teste_voo_real():
             return {"status": "erro", "logs": logs}
 
         logs.append("[SYS] Decolando...")
-        tello.takeoff()
+        drone_global.takeoff()
 
         time.sleep(5)
         logs.append("[SYS] Voo estabilizado.")
 
         logs.append("[SYS] Pousando...")
-        tello.land()
+        drone_global.land()
         logs.append("[SYS] Pouso concluído com sucesso.")
 
         return {"status": "sucesso", "logs": logs}
@@ -114,21 +124,17 @@ def teste_voo_real():
         logs.append(f"[ERRO] {e}")
         return {"status": "erro", "logs": logs}
 
-    finally:
-        tello.end()
-
-def teste_video_real():
+def teste_realizar_video():
     logs = []
-    tello = Tello()
     try:
         logs.append("[SYS] Conectando ao drone...")
-        tello.connect()
+        drone_global.connect()
 
         logs.append("[VID] Ativando stream de vídeo...")
-        tello.streamon()
+        drone_global.streamon()
         time.sleep(2)  # aguarda o hardware da câmera estabilizar
 
-        frame_read = tello.get_frame_read()
+        frame_read = drone_global.get_frame_read()
         frame = frame_read.frame
 
         if frame is not None and frame.size > 0:
@@ -146,19 +152,18 @@ def teste_video_real():
 
     finally:
         try:
-            tello.streamoff()
+            drone_global.streamoff()
         except Exception:
             pass
-        tello.end()
         logs.append("[SYS] Encerrando stream.")
 
-def teste_voo_video_real():
-    """
-    Executa apenas a decolagem usando a instância global do drone.
-    O pouso é responsabilidade exclusiva da rota POST /emergencia.
-    """
+def decolar_com_video_sem_pouso_automatico():
+    # Não pousa sozinho de propósito: o pouso fica a cargo de /emergencia,
+    # já que este endpoint mantém o drone voando com vídeo ativo.
     logs = []
     try:
+        drone_global.connect()
+
         bateria = drone_global.get_battery()
         logs.append(f"[SYS] Bateria: {bateria}%")
 
@@ -175,36 +180,36 @@ def teste_voo_video_real():
     except Exception as e:
         logs.append(f"[ERRO] {e}")
         return {"status": "erro", "logs": logs}
-    
-# ---------------------------------------------------------------------------
-# Rota de detecção de resíduos com stream MJPEG em tempo real
-# ---------------------------------------------------------------------------
-
-@app.get("/deteccao/stream")
-def deteccao_stream():
-    """
-    Stream MJPEG com detecção de resíduos em tempo real via YOLOv8.
-    Usa a instância global do Tello para evitar conflitos de porta UDP.
-    """
-    logger.info("Iniciando stream de detecção de resíduos...")
-    return StreamingResponse(
-        gerar_stream_deteccao(drone_global),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-    )
-
-
 
 # ---------------------------------------------------------------------------
-# Rota de emergência — pouso imediato
+# Comando
+# ---------------------------------------------------------------------------
+
+class ComandoRC(BaseModel):
+    lr: int  # left/right
+    fb: int  # forward/backward
+    ud: int  # up/down
+    yv: int  # yaw velocity
+
+@app.post("/controle")
+def enviar_comando_rc(comando: ComandoRC):
+    try:
+        drone_global.send_rc_control(comando.lr, comando.fb, comando.ud, comando.yv)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.exception("Erro ao enviar controle RC.")
+        return {"status": "erro", "erro": str(e)}
+
+# ---------------------------------------------------------------------------
+# Emergência
 # ---------------------------------------------------------------------------
 
 @app.post("/emergencia")
-def emergencia():
-    """Pouso de emergência. Envia o comando land() para o drone."""
+def pousar_emergencialmente():
     logs = []
     try:
         if drone_global.is_flying:
-            logs.append("[SYS] Drone em voo — enviando comando de pouso...")
+            logs.append("[SYS] Drone em voo - enviando comando de pouso...")
             drone_global.land()
             logs.append("[SYS] Pouso realizado com sucesso.")
         else:
@@ -216,25 +221,4 @@ def emergencia():
         logger.exception("Erro ao pousar o drone.")
         logs.append(f"[ERRO] {e}")
         return {"status": "erro", "logs": logs}
-
-
-# ---------------------------------------------------------------------------
-# Modelo e rota de controle manual (RC) via teclado
-# ---------------------------------------------------------------------------
-
-class ControleRC(BaseModel):
-    lr: int  # left/right
-    fb: int  # forward/backward
-    ud: int  # up/down
-    yv: int  # yaw velocity
-
-
-@app.post("/controle")
-def controle_rc(cmd: ControleRC):
-    """Envia comando RC (send_rc_control) para o drone."""
-    try:
-        drone_global.send_rc_control(cmd.lr, cmd.fb, cmd.ud, cmd.yv)
-        return {"status": "ok"}
-    except Exception as e:
-        logger.exception("Erro ao enviar controle RC.")
-        return {"status": "erro", "erro": str(e)}
+    
