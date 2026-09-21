@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -54,6 +54,12 @@ def teste_executar_voo_video():
 
 @app.get("/deteccao/stream")
 def iniciar_stream_deteccao():
+    if DRONE_MODE != "real":
+        raise HTTPException(
+            status_code=503,
+            detail="Stream indisponível em modo mock. Rode com DRONE_MODE=real."
+        )
+
     logger.info("Iniciando stream de detecção de resíduos...")
     return StreamingResponse(
         gerar_stream_deteccao(drone_global),
@@ -193,6 +199,9 @@ class ComandoRC(BaseModel):
 
 @app.post("/controle")
 def enviar_comando_rc(comando: ComandoRC):
+    if DRONE_MODE != "real":
+        return {"status": "ok", "modo": "mock"}
+
     try:
         drone_global.send_rc_control(comando.lr, comando.fb, comando.ud, comando.yv)
         return {"status": "ok"}
@@ -206,6 +215,9 @@ def enviar_comando_rc(comando: ComandoRC):
 
 @app.post("/emergencia")
 def pousar_emergencialmente():
+    if DRONE_MODE != "real":
+        return {"status": "sucesso", "logs": ["[SYS] Pouso de emergência simulado (modo mock)."]}
+
     logs = []
     try:
         if drone_global.is_flying:
