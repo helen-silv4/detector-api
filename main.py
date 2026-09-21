@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import json
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,21 +37,18 @@ def health():
 
 @app.post("/testes/voo")
 def teste_executar_voo():
-    if DRONE_MODE == "real":
-        return teste_realizar_voo()
-    return teste_simular_voo()
+    gerador = teste_realizar_voo() if DRONE_MODE == "real" else teste_simular_voo()
+    return StreamingResponse(gerador, media_type="application/x-ndjson")
 
 @app.post("/testes/video")
 def teste_executar_video():
-    if DRONE_MODE == "real":
-        return teste_realizar_video()
-    return teste_simular_video()
+    gerador = teste_realizar_video() if DRONE_MODE == "real" else teste_simular_video()
+    return StreamingResponse(gerador, media_type="application/x-ndjson")
 
 @app.post("/testes/voo-video")
 def teste_executar_voo_video():
-    if DRONE_MODE == "real":
-        return decolar_com_video_sem_pouso_automatico()
-    return teste_simular_voo_video()
+    gerador = decolar_com_video_sem_pouso_automatico() if DRONE_MODE == "real" else teste_simular_voo_video()
+    return StreamingResponse(gerador, media_type="application/x-ndjson")
 
 @app.get("/deteccao/stream")
 def iniciar_stream_deteccao():
@@ -71,121 +69,102 @@ def iniciar_stream_deteccao():
 # ---------------------------------------------------------------------------
 
 def teste_simular_voo():
-    logs = []
-    logs.append("[SYS] Conectando ao drone (simulado)...")
-    logs.append("[SYS] Bateria: 85%")
-    logs.append("[SYS] Decolando...")
+    yield json.dumps({"log": "[SYS] Conectando ao drone (simulado)..."}) + "\n"
+    yield json.dumps({"log": "[SYS] Bateria: 85%"}) + "\n"
+    yield json.dumps({"log": "[SYS] Decolando..."}) + "\n"
     time.sleep(1)
-    logs.append("[SYS] Voo estabilizado.")
-    logs.append("[SYS] Pousando...")
-    logs.append("[SYS] Pouso concluído com sucesso.")
-    return {"status": "sucesso", "logs": logs}
+    yield json.dumps({"log": "[SYS] Voo estabilizado."}) + "\n"
+    yield json.dumps({"log": "[SYS] Pousando..."}) + "\n"
+    yield json.dumps({"log": "[SYS] Pouso concluído com sucesso.", "status": "sucesso"}) + "\n"
 
 def teste_simular_video():
-    logs = []
-    logs.append("[SYS] Conectando ao drone (simulado)...")
-    logs.append("[VID] Ativando stream de vídeo...")
+    yield json.dumps({"log": "[SYS] Conectando ao drone (simulado)..."}) + "\n"
+    yield json.dumps({"log": "[VID] Ativando stream de vídeo..."}) + "\n"
     time.sleep(1)
-    logs.append("[VID] Stream recebido com sucesso.")
-    logs.append("[SYS] Encerrando stream.")
-    return {"status": "sucesso", "logs": logs}
+    yield json.dumps({"log": "[VID] Stream recebido com sucesso."}) + "\n"
+    yield json.dumps({"log": "[SYS] Encerrando stream.", "status": "sucesso"}) + "\n"
 
 def teste_simular_voo_video():
-    logs = []
-    logs.append("[SYS] Conectando ao drone (simulado)...")
-    logs.append("[VID] Ativando stream de vídeo...")
-    logs.append("[SYS] Decolando...")
+    yield json.dumps({"log": "[SYS] Conectando ao drone (simulado)..."}) + "\n"
+    yield json.dumps({"log": "[VID] Ativando stream de vídeo..."}) + "\n"
+    yield json.dumps({"log": "[SYS] Decolando..."}) + "\n"
     time.sleep(1)
-    logs.append("[SYS] Voo estabilizado, vídeo ativo em paralelo.")
-    logs.append("[SYS] Pousando...")
-    logs.append("[SYS] Pouso concluído com sucesso.")
-    return {"status": "sucesso", "logs": logs}
+    yield json.dumps({"log": "[SYS] Voo estabilizado, vídeo ativo em paralelo."}) + "\n"
+    yield json.dumps({"log": "[SYS] Pousando..."}) + "\n"
+    yield json.dumps({"log": "[SYS] Pouso concluído com sucesso.", "status": "sucesso"}) + "\n"
 
 def teste_realizar_voo():
-    logs = []
     try:
-        logs.append("[SYS] Conectando ao drone...")
+        yield json.dumps({"log": "[SYS] Conectando ao drone..."}) + "\n"
         drone_global.connect()
 
         bateria = drone_global.get_battery()
-        logs.append(f"[SYS] Bateria: {bateria}%")
+        yield json.dumps({"log": f"[SYS] Bateria: {bateria}%"}) + "\n"
 
         if bateria < 20:
-            logs.append("[SYS] Bateria abaixo de 20%. Abortando decolagem.")
-            return {"status": "erro", "logs": logs}
+            yield json.dumps({"log": "[SYS] Bateria abaixo de 20%. Abortando decolagem.", "status": "erro"}) + "\n"
+            return
 
-        logs.append("[SYS] Decolando...")
+        yield json.dumps({"log": "[SYS] Decolando..."}) + "\n"
         drone_global.takeoff()
 
         time.sleep(5)
-        logs.append("[SYS] Voo estabilizado.")
+        yield json.dumps({"log": "[SYS] Voo estabilizado."}) + "\n"
 
-        logs.append("[SYS] Pousando...")
+        yield json.dumps({"log": "[SYS] Pousando..."}) + "\n"
         drone_global.land()
-        logs.append("[SYS] Pouso concluído com sucesso.")
-
-        return {"status": "sucesso", "logs": logs}
+        yield json.dumps({"log": "[SYS] Pouso concluído com sucesso.", "status": "sucesso"}) + "\n"
 
     except Exception as e:
-        logs.append(f"[ERRO] {e}")
-        return {"status": "erro", "logs": logs}
+        yield json.dumps({"log": f"[ERRO] {e}", "status": "erro"}) + "\n"
 
 def teste_realizar_video():
-    logs = []
     try:
-        logs.append("[SYS] Conectando ao drone...")
+        yield json.dumps({"log": "[SYS] Conectando ao drone..."}) + "\n"
         drone_global.connect()
 
-        logs.append("[VID] Ativando stream de vídeo...")
+        yield json.dumps({"log": "[VID] Ativando stream de vídeo..."}) + "\n"
         drone_global.streamon()
-        time.sleep(2)  # aguarda o hardware da câmera estabilizar
+        time.sleep(2)
 
         frame_read = drone_global.get_frame_read()
         frame = frame_read.frame
 
         if frame is not None and frame.size > 0:
-            logs.append(f"[VID] Frame recebido com sucesso ({frame.shape[1]}x{frame.shape[0]}px).")
+            yield json.dumps({"log": f"[VID] Frame recebido com sucesso ({frame.shape[1]}x{frame.shape[0]}px)."}) + "\n"
             status = "sucesso"
         else:
-            logs.append("[ERRO] Nenhum frame recebido do stream.")
+            yield json.dumps({"log": "[ERRO] Nenhum frame recebido do stream."}) + "\n"
             status = "erro"
 
-        return {"status": status, "logs": logs}
+        yield json.dumps({"log": "[SYS] Encerrando stream.", "status": status}) + "\n"
 
     except Exception as e:
-        logs.append(f"[ERRO] {e}")
-        return {"status": "erro", "logs": logs}
-
+        yield json.dumps({"log": f"[ERRO] {e}", "status": "erro"}) + "\n"
     finally:
         try:
             drone_global.streamoff()
         except Exception:
             pass
-        logs.append("[SYS] Encerrando stream.")
 
 def decolar_com_video_sem_pouso_automatico():
-    # Não pousa sozinho de propósito: o pouso fica a cargo de /emergencia,
-    # já que este endpoint mantém o drone voando com vídeo ativo.
-    logs = []
     try:
+        yield json.dumps({"log": "[SYS] Conectando ao drone..."}) + "\n"
         drone_global.connect()
 
         bateria = drone_global.get_battery()
-        logs.append(f"[SYS] Bateria: {bateria}%")
+        yield json.dumps({"log": f"[SYS] Bateria: {bateria}%"}) + "\n"
 
         if bateria < 20:
-            logs.append("[SYS] Bateria abaixo de 20%. Abortando decolagem.")
-            return {"status": "erro", "logs": logs}
+            yield json.dumps({"log": "[SYS] Bateria abaixo de 20%. Abortando decolagem.", "status": "erro"}) + "\n"
+            return
 
-        logs.append("[SYS] Decolando...")
+        yield json.dumps({"log": "[SYS] Decolando..."}) + "\n"
         drone_global.takeoff()
-        logs.append("[SYS] Decolagem realizada com sucesso.")
-
-        return {"status": "sucesso", "logs": logs}
+        yield json.dumps({"log": "[SYS] Decolagem realizada com sucesso.", "status": "sucesso"}) + "\n"
 
     except Exception as e:
-        logs.append(f"[ERRO] {e}")
-        return {"status": "erro", "logs": logs}
+        yield json.dumps({"log": f"[ERRO] {e}", "status": "erro"}) + "\n"
 
 # ---------------------------------------------------------------------------
 # Comando
