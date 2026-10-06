@@ -2,13 +2,21 @@ import logging
 import os
 import time
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from djitellopy import Tello
 
 from deteccao_stream import gerar_stream_deteccao
+
+from database import engine, get_db, Base
+import crud
+import models  # noqa: F401 — registra os modelos na Base
+from models import Deteccao
+
+Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +76,68 @@ def deteccao_stream():
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
+
+# ---------------------------------------------------------------------------
+# Schema Pydantic e rotas de persistência (Voo + Detecção + Recorrência)
+# ---------------------------------------------------------------------------
+
+class DeteccaoCreate(BaseModel):
+    lat: float
+    lon: float
+    confianca: float
+    img_path: str
+
+
+@app.post("/voo/iniciar")
+def rota_iniciar_voo(db: Session = Depends(get_db)):
+    """Cria um novo registro de voo com a data atual."""
+    voo = crud.iniciar_voo(db)
+    return {"id_voo": voo.id_voo, "data_voo": str(voo.data_voo)}
+
+
+@app.post("/deteccao/registrar/{id_voo}")
+def rota_registrar_deteccao(
+    id_voo: int,
+    dados: DeteccaoCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Persiste a detecção e agenda a verificação de recorrência espacial
+    como tarefa em background para não bloquear a resposta HTTP.
+    """
+    id_deteccao = crud.salvar_deteccao(
+        db, id_voo, dados.lat, dados.lon, dados.confianca, dados.img_path
+    )
+
+    background_tasks.add_task(
+        crud.verificar_recorrencia_assincrona,
+        db, id_deteccao, dados.lat, dados.lon,
+    )
+
+    return {"id_deteccao": id_deteccao}
+ 
+ 
+@app.get("/deteccao/listar")
+def listar_deteccoes(db: Session = Depends(get_db)):
+    """Retorna todas as detecções salvas no PostgreSQL para o Dashboard do Angular."""
+    try:
+        registros = db.query(Deteccao).order_by(Deteccao.id_deteccao.desc()).all()
+        # Extrai os dados do SQLAlchemy e converte em dicionários JSON-friendly
+        resultado = [
+            {
+                "id_deteccao": reg.id_deteccao,
+                "id_voo": reg.id_voo,
+                "latitude": float(reg.latitude),
+                "longitude": float(reg.longitude),
+                "confianca_ia": float(reg.confianca_ia),
+                "caminho_imagem": reg.caminho_imagem
+            }
+            for reg in registros
+        ]
+        return resultado
+    except Exception as e:
+        return {"status": "erro", "detalhe": str(e)}
 
 def teste_voo_mock():
     logs = []
@@ -176,6 +246,10 @@ def teste_voo_video_real():
     """
     logs = []
     try:
+        # CORREÇÃO: Garante que o drone está conectado antes de pedir a bateria
+        logs.append("[SYS] Conectando ao drone...")
+        drone_global.connect()
+        
         bateria = drone_global.get_battery()
         logs.append(f"[SYS] Bateria: {bateria}%")
 
