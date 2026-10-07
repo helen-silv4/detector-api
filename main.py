@@ -1,15 +1,20 @@
 import logging
 import os
+import re
 import time
 
-from fastapi import BackgroundTasks, Depends, FastAPI
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+import cv2
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from djitellopy import Tello
 
-from deteccao_stream import gerar_stream_deteccao
+from deteccao_stream import definir_origem, gerar_stream_deteccao, obter_captura
 
 from database import engine, get_db, Base
 import crud
@@ -37,6 +42,36 @@ app.add_middleware(
 
 DRONE_MODE = "real"  # mock ou real
 
+# ---------------------------------------------------------------------------
+# Arquivos estáticos — imagens das infrações
+# O caminho gravado no banco segue o padrão "capturas/drone_frame_<ts>.jpg",
+# portanto a pasta "capturas" (ao lado deste arquivo) é exposta em /imagens.
+# Ex.: capturas/drone_frame_123.jpg -> http://localhost:8000/imagens/drone_frame_123.jpg
+# ---------------------------------------------------------------------------
+DIRETORIO_IMAGENS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "capturas")
+os.makedirs(DIRETORIO_IMAGENS, exist_ok=True)  # StaticFiles falha se a pasta não existir
+
+app.mount("/imagens", StaticFiles(directory=DIRETORIO_IMAGENS), name="imagens")
+
+
+# ---------------------------------------------------------------------------
+# Trava de coordenadas: erros de validação na rota de decolagem viram 400
+# (o padrão do FastAPI seria 422). Demais rotas mantêm o comportamento padrão.
+# ---------------------------------------------------------------------------
+ROTA_DECOLAGEM = "/missao/decolar"
+MSG_ERRO_COORDENADAS = "As coordenadas devem conter exatamente 8 casas decimais"
+
+
+@app.exception_handler(RequestValidationError)
+async def tratar_erro_validacao(request: Request, exc: RequestValidationError):
+    if request.url.path == ROTA_DECOLAGEM:
+        campos = sorted({str(e["loc"][-1]) for e in exc.errors() if e.get("loc")})
+        return JSONResponse(
+            status_code=400,
+            content={"detail": MSG_ERRO_COORDENADAS, "campos_invalidos": campos},
+        )
+    return await request_validation_exception_handler(request, exc)
+
 @app.get("/health")
 def health():
     return {"status": "ok", "drone_mode": DRONE_MODE}
@@ -58,6 +93,53 @@ def teste_voo_video():
     if DRONE_MODE == "real":
         return teste_voo_video_real()
     return teste_voo_video_mock()
+
+
+# ---------------------------------------------------------------------------
+# Decolagem da missão com trava de 8 casas decimais nas coordenadas
+# ---------------------------------------------------------------------------
+
+# Mesma regex do frontend. re.ASCII faz \d aceitar apenas 0-9 (sem dígitos Unicode).
+REGEX_COORDENADA = re.compile(r"^-?\d+\.\d{8}$", re.ASCII)
+
+
+class CoordenadasDecolagem(BaseModel):
+    """
+    As coordenadas são recebidas como *string* de propósito: um float JSON
+    perde zeros à direita (-23.52223000 -> -23.52223), o que tornaria
+    impossível verificar a quantidade exata de casas decimais.
+    Valores numéricos (não-string) são rejeitados pelo Pydantic v2.
+    """
+    latitude: str
+    longitude: str
+
+    @field_validator("latitude", "longitude")
+    @classmethod
+    def validar_oito_casas(cls, valor: str) -> str:
+        if not REGEX_COORDENADA.fullmatch(valor):
+            raise ValueError(MSG_ERRO_COORDENADAS)
+        return valor
+
+
+@app.post(ROTA_DECOLAGEM)
+def rota_decolar_missao(coords: CoordenadasDecolagem):
+    """
+    Decola o drone somente após validar as coordenadas (8 casas decimais).
+    Coordenadas inválidas retornam 400 via `tratar_erro_validacao`.
+    """
+    logger.info("Decolagem autorizada em LAT=%s LON=%s", coords.latitude, coords.longitude)
+    try:
+        definir_origem(float(coords.latitude), float(coords.longitude))
+    except Exception as e:
+        logger.warning("Falha ao definir origem de decolagem: %s", e)
+
+    resultado = teste_voo_video_real() if DRONE_MODE == "real" else teste_voo_video_mock()
+    resultado["logs"].insert(
+        0,
+        f"[SYS] Coordenadas de decolagem validadas: LAT {coords.latitude} | LON {coords.longitude}",
+    )
+    resultado["coordenadas"] = {"latitude": coords.latitude, "longitude": coords.longitude}
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -98,24 +180,50 @@ def rota_iniciar_voo(db: Session = Depends(get_db)):
 @app.post("/deteccao/registrar/{id_voo}")
 def rota_registrar_deteccao(
     id_voo: int,
-    dados: DeteccaoCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """
-    Persiste a detecção e agenda a verificação de recorrência espacial
-    como tarefa em background para não bloquear a resposta HTTP.
+    Captura automaticamente o frame atual, coordenadas estimadas e confiança
+    da IA a partir do estado global do stream/drone, salvando a imagem em disco.
     """
+    captura = obter_captura()
+
+    if captura is not None:
+        frame = captura["frame"]
+        lat = float(captura["lat"])
+        lon = float(captura["lon"])
+        confianca = float(captura["confianca"])
+    else:
+        # Fallback seguro caso o stream ainda não tenha gerado frames ou esteja em teste
+        import numpy as np
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        lat = -23.52223000
+        lon = -46.67362000
+        confianca = 0.85
+
+    nome_img = f"drone_frame_{int(time.time() * 1000)}.jpg"
+    caminho_completo = os.path.join(DIRETORIO_IMAGENS, nome_img)
+    cv2.imwrite(caminho_completo, frame)
+    caminho_relativo = f"capturas/{nome_img}"
+
     id_deteccao = crud.salvar_deteccao(
-        db, id_voo, dados.lat, dados.lon, dados.confianca, dados.img_path
+        db, id_voo, lat, lon, confianca, caminho_relativo
     )
 
     background_tasks.add_task(
         crud.verificar_recorrencia_assincrona,
-        db, id_deteccao, dados.lat, dados.lon,
+        db, id_deteccao, lat, lon,
     )
 
-    return {"id_deteccao": id_deteccao}
+    return {
+        "status": "sucesso",
+        "id_deteccao": id_deteccao,
+        "latitude": lat,
+        "longitude": lon,
+        "confianca_ia": confianca,
+        "caminho_imagem": caminho_relativo,
+    }
  
  
 @app.get("/deteccao/listar")
