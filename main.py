@@ -84,9 +84,11 @@ def teste_voo():
 
 @app.post("/testes/video")
 def teste_video():
-    if DRONE_MODE == "real":
-        return teste_video_real()
-    return teste_video_mock()
+    """
+    Endpoint dummy. A conexão real (connect/streamon) é feita exclusivamente
+    pelo GET /deteccao/stream, chamado pela tag <img> do Angular.
+    """
+    return {"status": "ok"}
 
 @app.post("/testes/voo-video")
 def teste_voo_video():
@@ -147,14 +149,15 @@ def rota_decolar_missao(coords: CoordenadasDecolagem):
 # ---------------------------------------------------------------------------
 
 @app.get("/deteccao/stream")
-def deteccao_stream():
+def deteccao_stream(ia: bool = True):
     """
     Stream MJPEG com detecção de resíduos em tempo real via YOLOv8.
     Usa a instância global do Tello para evitar conflitos de porta UDP.
+    Permite desativar a IA usando o parâmetro de query ?ia=false.
     """
-    logger.info("Iniciando stream de detecção de resíduos...")
+    logger.info(f"Iniciando stream de vídeo (IA ativada: {ia})...")
     return StreamingResponse(
-        gerar_stream_deteccao(drone_global),
+        gerar_stream_deteccao(drone_global, usar_ia=ia),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
@@ -280,11 +283,16 @@ def teste_voo_video_mock():
 
 
 def teste_voo_real():
+    """
+    Usa a instância global (Singleton). NÃO chama tello.end(): no djitellopy,
+    end() remove o host '192.168.10.1' do registro interno de drones,
+    quebrando o stream/heartbeat em execução (KeyError: '192.168.10.1').
+    """
     logs = []
-    tello = Tello()
+    tello = drone_global
     try:
         logs.append("[SYS] Conectando ao drone...")
-        tello.connect()
+        tello.connect()  # mesmo objeto/socket do Singleton: não abre nova porta UDP
 
         bateria = tello.get_battery()
         logs.append(f"[SYS] Bateria: {bateria}%")
@@ -309,55 +317,15 @@ def teste_voo_real():
         logs.append(f"[ERRO] {e}")
         return {"status": "erro", "logs": logs}
 
-    finally:
-        tello.end()
-
-def teste_video_real():
-    logs = []
-    tello = Tello()
-    try:
-        logs.append("[SYS] Conectando ao drone...")
-        tello.connect()
-
-        logs.append("[VID] Ativando stream de vídeo...")
-        tello.streamon()
-        time.sleep(2)  # aguarda o hardware da câmera estabilizar
-
-        frame_read = tello.get_frame_read()
-        frame = frame_read.frame
-
-        if frame is not None and frame.size > 0:
-            logs.append(f"[VID] Frame recebido com sucesso ({frame.shape[1]}x{frame.shape[0]}px).")
-            status = "sucesso"
-        else:
-            logs.append("[ERRO] Nenhum frame recebido do stream.")
-            status = "erro"
-
-        return {"status": status, "logs": logs}
-
-    except Exception as e:
-        logs.append(f"[ERRO] {e}")
-        return {"status": "erro", "logs": logs}
-
-    finally:
-        try:
-            tello.streamoff()
-        except Exception:
-            pass
-        tello.end()
-        logs.append("[SYS] Encerrando stream.")
-
 def teste_voo_video_real():
     """
     Executa apenas a decolagem usando a instância global do drone.
+    A conexão (connect/streamon) é responsabilidade exclusiva do
+    gerador do stream (GET /deteccao/stream), aberto pela tag <img> do Angular.
     O pouso é responsabilidade exclusiva da rota POST /emergencia.
     """
     logs = []
     try:
-        # CORREÇÃO: Garante que o drone está conectado antes de pedir a bateria
-        logs.append("[SYS] Conectando ao drone...")
-        drone_global.connect()
-        
         bateria = drone_global.get_battery()
         logs.append(f"[SYS] Bateria: {bateria}%")
 
