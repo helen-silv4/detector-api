@@ -264,12 +264,13 @@ def _iniciar_thread_ia(modelo: YOLO, stop_event: threading.Event) -> threading.T
 # ---------------------------------------------------------------------------
 # Gerador Principal MJPEG (Thread 2 + Pipeline de Streaming)
 # ---------------------------------------------------------------------------
-def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Generator[bytes, None, None]:
+def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None, usar_ia: bool = True) -> Generator[bytes, None, None]:
     """
     Gerador principal de stream MJPEG utilizando a Arquitetura de 3 Threads Isoladas.
     O ritmo de geração é ditado pelo fluxo da câmera sem introduzir sleeps artificiais.
+    Se usar_ia=False, a Thread 3 (YOLO) não é instanciada e não há plot de IA.
     """
-    modelo = _carregar_modelo(modelo_path)
+    modelo = _carregar_modelo(modelo_path) if usar_ia else None
     stop_event = threading.Event()
 
     thread_heartbeat = None
@@ -315,9 +316,10 @@ def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Gener
         frame_reader = tello.get_frame_read()
 
         # -----------------------------------------------------------------------
-        # 3. Inicialização da Thread 3: YOLO Assíncrono
+        # 3. Inicialização da Thread 3: YOLO Assíncrono (Opcional)
         # -----------------------------------------------------------------------
-        thread_ia = _iniciar_thread_ia(modelo, stop_event)
+        if usar_ia:
+            thread_ia = _iniciar_thread_ia(modelo, stop_event)
 
         logger.info("Stream e threads ativas. Iniciando transmissão MJPEG...")
 
@@ -333,7 +335,7 @@ def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Gener
         while True:
             # Watchdog: se a Thread 3 (YOLO) morrer, loga e reinicia em vez de congelar a IA
             agora = time.time()
-            if agora - t_ultimo_watchdog >= _WATCHDOG_INTERVALO_S:
+            if usar_ia and agora - t_ultimo_watchdog >= _WATCHDOG_INTERVALO_S:
                 t_ultimo_watchdog = agora
                 if not stop_event.is_set() and (thread_ia is None or not thread_ia.is_alive()):
                     logger.error("Watchdog: Thread 3 (YOLO) não está viva. Reiniciando...")
@@ -355,20 +357,23 @@ def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Gener
                 # O djitellopy/PyAV decodifica em RGB; convertemos para BGR para uso no OpenCV e YOLO
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-                # Thread 3 (YOLO): envia o frame recente e busca o resultado mais recente
-                with _estado_ia["lock"]:
-                    _estado_ia["frame_recente"] = frame_bgr.copy()
-                    resultado_atual = _estado_ia["resultado"]
-                _estado_ia["evento_novo_frame"].set()
-
-                # Renderização das bounding boxes se houver inferência concluída.
-                # Falha no plot não derruba o stream: segue com o frame cru.
                 frame_anotado = frame_bgr
-                if resultado_atual is not None:
-                    try:
-                        frame_anotado = resultado_atual.plot(img=frame_bgr)
-                    except Exception as e:
-                        logger.warning("Falha ao desenhar detecções no frame: %s", e)
+                resultado_atual = None
+
+                if usar_ia:
+                    # Thread 3 (YOLO): envia o frame recente e busca o resultado mais recente
+                    with _estado_ia["lock"]:
+                        _estado_ia["frame_recente"] = frame_bgr.copy()
+                        resultado_atual = _estado_ia["resultado"]
+                    _estado_ia["evento_novo_frame"].set()
+
+                    # Renderização das bounding boxes se houver inferência concluída.
+                    # Falha no plot não derruba o stream: segue com o frame cru.
+                    if resultado_atual is not None:
+                        try:
+                            frame_anotado = resultado_atual.plot(img=frame_bgr)
+                        except Exception as e:
+                            logger.warning("Falha ao desenhar detecções no frame: %s", e)
 
                 # Telemetria local não-bloqueante (leitura de estado em memória do Tello)
                 try:
@@ -400,12 +405,13 @@ def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Gener
 
                 _desenhar_hud(frame_anotado, bateria, velocidade, lat, lon)
 
-                # Publica o estado para a rota de captura de infração
-                with _estado_captura["lock"]:
-                    _estado_captura["frame"] = frame_anotado
-                    _estado_captura["confianca"] = _maior_confianca(resultado_atual)
-                    _estado_captura["lat"], _estado_captura["lon"] = lat, lon
-                    _estado_captura["timestamp"] = t_agora
+                # Publica o estado para a rota de captura de infração (se IA ativada)
+                if usar_ia:
+                    with _estado_captura["lock"]:
+                        _estado_captura["frame"] = frame_anotado
+                        _estado_captura["confianca"] = _maior_confianca(resultado_atual)
+                        _estado_captura["lat"], _estado_captura["lon"] = lat, lon
+                        _estado_captura["timestamp"] = t_agora
 
                 # Codificação JPEG
                 jpeg_bytes = _frame_para_jpeg(frame_anotado)
@@ -427,7 +433,8 @@ def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Gener
 
         # 1. Sinaliza parada para todas as threads
         stop_event.set()
-        _estado_ia["evento_novo_frame"].set()
+        if usar_ia:
+            _estado_ia["evento_novo_frame"].set()
 
         # 2. Aguarda a finalização das threads de suporte
         if thread_heartbeat is not None and thread_heartbeat.is_alive():
@@ -450,11 +457,12 @@ def gerar_stream_deteccao(tello: Tello, modelo_path: str | None = None) -> Gener
             logger.warning("Falha ao desligar o stream no Tello: %s", e)
 
         # 5. Reseta a variável global de estado da IA
-        with _estado_ia["lock"]:
-            _estado_ia["frame_recente"] = None
-            _estado_ia["resultado"] = None
-        with _estado_captura["lock"]:
-            _estado_captura["frame"] = None
-            _estado_captura["confianca"] = 0.0
+        if usar_ia:
+            with _estado_ia["lock"]:
+                _estado_ia["frame_recente"] = None
+                _estado_ia["resultado"] = None
+            with _estado_captura["lock"]:
+                _estado_captura["frame"] = None
+                _estado_captura["confianca"] = 0.0
 
         logger.info("Recursos liberados e gerador de stream finalizado.")
