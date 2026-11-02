@@ -1,14 +1,16 @@
-# =========================
-# AMBIENTE VIRTUAL
-# =========================
+# =============================================================================
+# AMBIENTE VIRTUAL & DEPENDÊNCIAS
+# =============================================================================
 .venv/
 venv/
 env/
 ENV/
+env.bak/
+venv.bak/
 
-# =========================
+# =============================================================================
 # CACHE E ARQUIVOS PYTHON
-# =========================
+# =============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -29,41 +31,91 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.manifest
+*.spec
 
-# =========================
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Linters e tipagem
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# =============================================================================
 # YOLOv8 & VISÃO COMPUTACIONAL
-# =========================
-# Ignorar pastas de treinamento do YOLO (caso rode algo local acidentalmente)
+# =============================================================================
+# Pastas de treinamento, predições e caches do Ultralytics
 runs/
-# Ignorar modelos base pesados baixados automaticamente pelo YOLO
+*.onnx
+*.engine
+*.torchscript
+
+# Modelos base padrão baixados automaticamente pelo YOLO
 yolov8n.pt
 yolov8s.pt
 yolov8m.pt
 yolov8l.pt
 yolov8x.pt
-# (Nota: o seu models/best.pt não será ignorado por esta regra, então ele subirá para o GitHub normalmente)
 
-# Arquivos de mídia gerados por testes
+# (Nota: 'models/best.pt' não é ignorado para que os pesos do projeto subam ao repositório)
+
+# Mídias e frames gravados durante testes ou execução
 *.mp4
 *.avi
 *.mkv
+*.mov
 *.jpg
 *.jpeg
 *.png
+capturas/
+frames/
+recordings/
+uploads/
 
-# =========================
-# VARIÁVEIS DE AMBIENTE
-# =========================
+# Exceção para imagens de documentação (se houver)
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.jpeg
+!assets/**/*.png
+!assets/**/*.jpg
+!assets/**/*.jpeg
+
+# =============================================================================
+# BANCO DE DADOS, LOGS & TEMPORÁRIOS
+# =============================================================================
+*.sqlite
+*.sqlite3
+*.db
+*.log
+logs/
+*.tmp
+*.temp
+*~
+
+# =============================================================================
+# VARIÁVEIS DE AMBIENTE & SEGREDOS (NÃO SUBIR)
+# =============================================================================
 .env
 .env.local
 .env.*.local
+*.env
 
-# =========================
-# IDEs E SO
-# =========================
+# =============================================================================
+# IDEs E SISTEMA OPERACIONAL
+# =============================================================================
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
