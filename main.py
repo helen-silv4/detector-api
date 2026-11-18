@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from djitellopy import Tello
 
 from deteccao_stream import definir_origem, gerar_stream_deteccao, obter_captura
+import testes_drone
 
 from database import engine, get_db, Base
 import crud
@@ -76,25 +77,68 @@ async def tratar_erro_validacao(request: Request, exc: RequestValidationError):
 def health():
     return {"status": "ok", "drone_mode": DRONE_MODE}
 
+# ---------------------------------------------------------------------------
+# Tela de testes — logs em tempo real (SSE) + vídeo sem YOLO
+# Os POSTs apenas disparam o teste em segundo plano e retornam na hora;
+# cada etapa chega ao frontend pelo GET /testes/logs/stream.
+# ---------------------------------------------------------------------------
+
+def _resposta_teste_iniciado(canal: str, iniciado: bool):
+    if not iniciado:
+        return JSONResponse(
+            status_code=409,
+            content={"status": "ocupado", "logs": ["[SYS] Já existe um teste de voo em andamento."]},
+        )
+    return {"status": "iniciado", "canal": canal, "logs": []}
+
+
+@app.get("/testes/logs/stream")
+async def testes_logs_stream(request: Request):
+    """Server-Sent Events com os logs dos testes no momento em que acontecem."""
+    return StreamingResponse(
+        testes_drone.gerar_sse_logs(request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/testes/video/stream")
+async def testes_video_stream(canal: str = testes_drone.CANAL_VIDEO):
+    """Stream MJPEG da tela de testes, SEM inferência YOLO."""
+    return StreamingResponse(
+        testes_drone.gerar_stream_video_teste(drone_global, DRONE_MODE, canal),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store"},
+    )
+
+
 @app.post("/testes/voo")
 def teste_voo():
+    """Dispara o teste de voo (decola, paira, pousa) em segundo plano."""
+    canal = testes_drone.CANAL_VOO
     if DRONE_MODE == "real":
-        return teste_voo_real()
-    return teste_voo_mock()
+        alvo = lambda: testes_drone.executar_voo_real(drone_global, canal)  # noqa: E731
+    else:
+        alvo = lambda: testes_drone.executar_voo_mock(canal)  # noqa: E731
+    return _resposta_teste_iniciado(canal, testes_drone.iniciar_teste(canal, alvo))
 
 @app.post("/testes/video")
 def teste_video():
     """
-    Endpoint dummy. A conexão real (connect/streamon) é feita exclusivamente
-    pelo GET /deteccao/stream, chamado pela tag <img> do Angular.
+    Endpoint dummy. O vídeo da tela de testes é aberto pelo GET /testes/video/stream,
+    chamado pela tag <img> do Angular (os logs chegam pelo SSE).
     """
-    return {"status": "ok"}
+    return {"status": "ok", "logs": []}
 
 @app.post("/testes/voo-video")
 def teste_voo_video():
+    """Decola, paira e pousa enquanto o vídeo (aberto pelo <img> do Angular) transmite."""
+    canal = testes_drone.CANAL_VOO_VIDEO
     if DRONE_MODE == "real":
-        return teste_voo_video_real()
-    return teste_voo_video_mock()
+        alvo = lambda: testes_drone.executar_voo_real(drone_global, canal, aguardar_video=True)  # noqa: E731
+    else:
+        alvo = lambda: testes_drone.executar_voo_mock(canal, aguardar_video=True)  # noqa: E731
+    return _resposta_teste_iniciado(canal, testes_drone.iniciar_teste(canal, alvo))
 
 
 # ---------------------------------------------------------------------------
